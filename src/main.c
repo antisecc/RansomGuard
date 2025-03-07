@@ -13,7 +13,7 @@
 #include "response.h"
 #include "daemon_utils.h"
 
-static volatile int keep_running = 1;
+volatile int keep_running = 1;
 static volatile int force_exit = 0;
 static const char *DEFAULT_PID_FILE = "/var/run/ransomguard.pid";
 static const char *DEFAULT_CONFIG_FILE = "/etc/ransomguard.conf";
