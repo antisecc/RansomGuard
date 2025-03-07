@@ -14,14 +14,26 @@
 #include "daemon_utils.h"
 
 static volatile int keep_running = 1;
+static volatile int force_exit = 0;
 static const char *DEFAULT_PID_FILE = "/var/run/ransomguard.pid";
 static const char *DEFAULT_CONFIG_FILE = "/etc/ransomguard.conf";
 static const char *DEFAULT_WATCH_DIR = "/home";
+
+
+void force_exit_handler(int sig){
+    (void)sig;
+    log_suspicious_activity("Forced exit signal received, shutting down...");
+    force_exit = 1;
+    exit(EXIT_FAILURE);
+}
 
 void signal_handler(int sig) {
     if (sig == SIGTERM || sig == SIGINT) {
         log_suspicious_activity("Received termination signal, shutting down...");
         keep_running = 0;
+
+        signal(SIGTERM, force_exit_handler);
+        alarm(5);
     }
 }
 
@@ -144,8 +156,15 @@ int main(int argc, char *argv[]) {
         if (target_pid > 0) {
             analyze_process();
         }
-        // Sleep to reduce CPU usage
-        sleep(1);
+
+        if (!keep_running) {
+            break;
+        }
+
+        struct timeval tv;
+        tv.tv_sec = 0;
+        tv.tv_usec = 100000;  // 100ms
+        select(0, NULL, NULL, NULL, &tv);
     }
 
     log_suspicious_activity("Shutting down");

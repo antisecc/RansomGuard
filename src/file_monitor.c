@@ -34,7 +34,11 @@ bool init_file_monitor(const char *watch_path) {
     return true;
 }
 
-void start_file_monitoring() {
+void start_file_monitoring(void) {
+    
+    if (!keep_running) {
+        return;
+    }
     char buffer[EVENT_BUF_LEN];
     int i = 0, length;
     
