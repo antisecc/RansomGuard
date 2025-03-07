@@ -4,7 +4,7 @@
 
 #include <stdbool.h>
 bool init_file_monitor(const char *watch_path);
-void start_file_monitoring();
-void cleanup_file_monitor();
+void start_file_monitoring(void);
+void cleanup_file_monitor(void);
 
 #endif

@@ -16,22 +16,22 @@ CONFDIR = /etc
 all: $(TARGET)
 
 $(TARGET): $(OBJS)
-    $(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 %.o: %.c
-    $(CC) $(CFLAGS) -c $< -o $@
+	$(CC) $(CFLAGS) -c $< -o $@
 
 install: $(TARGET)
-    install -d $(DESTDIR)$(BINDIR)
-    install -m 755 $(TARGET) $(DESTDIR)$(BINDIR)
-    install -d $(DESTDIR)$(CONFDIR)
-    [ -f $(DESTDIR)$(CONFDIR)/ransomguard.conf ] || install -m 644 ransomguard.conf $(DESTDIR)$(CONFDIR)
+	install -d $(DESTDIR)$(BINDIR)
+	install -m 755 $(TARGET) $(DESTDIR)$(BINDIR)
+	install -d $(DESTDIR)$(CONFDIR)
+	[ -f $(DESTDIR)$(CONFDIR)/ransomguard.conf ] || install -m 644 ransomguard.conf $(DESTDIR)$(CONFDIR)
 
 uninstall:
-    rm -f $(DESTDIR)$(BINDIR)/$(TARGET)
-    rm -f $(DESTDIR)$(CONFDIR)/ransomguard.conf
+	rm -f $(DESTDIR)$(BINDIR)/$(TARGET)
+	rm -f $(DESTDIR)$(CONFDIR)/ransomguard.conf
 
 clean:
-    rm -f $(OBJS) $(TARGET)
+	rm -f $(OBJS) $(TARGET)
 
 .PHONY: all install uninstall clean

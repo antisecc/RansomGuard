@@ -5,6 +5,7 @@
 #include <unistd.h>
 #include <string.h>
 #include <getopt.h>
+#include <syslog.h>
 #include "file_monitor.h"
 #include "syscall_monitor.h"
 #include "process_analyzer.h"
@@ -41,6 +42,7 @@ int main(int argc, char *argv[]) {
     // Default values
     char *pid_file = (char*)DEFAULT_PID_FILE;
     char *config_file = (char*)DEFAULT_CONFIG_FILE;
+    (void)config_file;
     char *watch_dir = (char*)DEFAULT_WATCH_DIR;
     pid_t target_pid = -1;
     int run_as_daemon = 0;
@@ -137,21 +139,15 @@ int main(int argc, char *argv[]) {
     
     // Main monitoring loop
     while (keep_running) {
-        // Monitor file activity
-        // We'll need to modify file_monitoring to be non-blocking
-        start_file_monitoring_cycle();  // Assume this is a non-blocking version
+        start_file_monitoring();  
         
-        // Monitor process if specified
         if (target_pid > 0) {
             analyze_process();
-            monitor_syscalls_cycle();   // Assume this is a non-blocking version
         }
-        
         // Sleep to reduce CPU usage
         sleep(1);
     }
 
-    // Cleanup
     log_suspicious_activity("Shutting down");
     cleanup_file_monitor();
     

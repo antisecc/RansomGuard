@@ -6,7 +6,7 @@
 
 bool init_syscall_monitor(pid_t target_pid);
 
-void start_syscall_monitoring();
-void cleanup_syscall_monitor();
+void start_syscall_monitoring(void);
+void cleanup_syscall_monitor(void);
 
 #endif
