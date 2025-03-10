@@ -12,6 +12,11 @@
 #include "syscall_filter.h"
 #include "response.h"
 #include "daemon_utils.h"
+#include "behavioral_analysis.h"
+#include "entropy_analysis.h"
+#include "process_relationship.h"
+#include "syscall_pattern.h"
+#include "hash_monitor.h"
 
 volatile int keep_running = 1;
 static volatile int force_exit = 0;
@@ -19,6 +24,11 @@ static const char *DEFAULT_PID_FILE = "/var/run/ransomguard.pid";
 static const char *DEFAULT_CONFIG_FILE = "/etc/ransomguard.conf";
 static const char *DEFAULT_WATCH_DIR = "/home";
 
+static int file_ops_threshold = 50;
+static double entropy_threshold = 0.8;
+static int max_tracked_files = 5000;
+static int max_concurrent_file_ops = 20;
+static bool kill_suspicious_processes = false;
 
 void force_exit_handler(int sig){
     (void)sig;
@@ -48,6 +58,53 @@ void print_usage(const char *program_name) {
     fprintf(stderr, "  -w, --watchdir=DIR        Directory to monitor (default: %s)\n", DEFAULT_WATCH_DIR);
     fprintf(stderr, "  -m, --monitor-pid=PID     Specific process PID to monitor\n");
     fprintf(stderr, "  -h, --help                Display this help and exit\n");
+}
+
+bool init_all(const char *watch_dir, pid_t target_pid) {
+    (void)target_pid;  // Mark as intentionally unused
+    if (!init_file_monitor(watch_dir)) {
+        log_suspicious_activity("Failed to initialize file monitor");
+        return false;
+    }
+    
+    if (!init_behavioral_analysis(max_tracked_files, file_ops_threshold, entropy_threshold)) {
+        log_suspicious_activity("Failed to initialize behavioral analysis");
+        return false;
+    }
+    
+    if (!init_process_relationship()) {
+        log_suspicious_activity("Failed to initialize process relationship analysis");
+        return false;
+    }
+    
+    if (!init_syscall_pattern()) {
+        log_suspicious_activity("Failed to initialize syscall pattern analysis");
+        return false;
+    }
+    
+    if (!init_hash_monitor(max_tracked_files)) {
+        log_suspicious_activity("Failed to initialize hash monitor");
+        return false;
+    }
+    
+    
+    return true;
+}
+
+void handle_threat(const char *message, pid_t suspicious_pid) {
+    log_suspicious_activity(message);
+    
+    if (kill_suspicious_processes && suspicious_pid > 0) {
+        char action_msg[256];
+        snprintf(action_msg, sizeof(action_msg), "Terminating suspicious process %d", suspicious_pid);
+        log_suspicious_activity(action_msg);
+        
+        if (kill(suspicious_pid, SIGTERM) == 0) {
+            log_suspicious_activity("Process terminated successfully");
+        } else {
+            log_suspicious_activity("Failed to terminate process");
+        }
+    }
 }
 
 int main(int argc, char *argv[]) {
@@ -98,7 +155,7 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    // Run as daemon if requested
+    // daemon if requested
     if (run_as_daemon) {
         if (!daemonize()) {
             fprintf(stderr, "Failed to daemonize\n");
@@ -111,32 +168,16 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    // Set up signal handlers
     signal(SIGINT, signal_handler);
     signal(SIGTERM, signal_handler);
     
-    // Initialize logging
     openlog("ransomguard", LOG_PID, LOG_DAEMON);
     log_suspicious_activity("RansomGuard daemon starting");
 
-    // Initialize monitors
     int success = 1;
-    if (!init_file_monitor(watch_dir)) {
-        log_suspicious_activity("Failed to initialize file monitor");
+    if (!init_all(watch_dir, target_pid)) {
+        log_suspicious_activity("Initialization failed, shutting down");
         success = 0;
-    }
-
-    // If specific PID monitoring requested
-    if (target_pid > 0) {
-        if (!init_syscall_monitor(target_pid)) {
-            log_suspicious_activity("Failed to initialize syscall monitor");
-            success = 0;
-        }
-        
-        if (!init_process_analyzer(target_pid)) {
-            log_suspicious_activity("Failed to initialize process analyzer");
-            success = 0;
-        }
     }
 
     if (!success) {
@@ -151,10 +192,42 @@ int main(int argc, char *argv[]) {
     
     // Main monitoring loop
     while (keep_running) {
-        start_file_monitoring();  
+        start_file_monitoring();
         
+        suspicious_activity_t activity;
+        if (detect_suspicious_activity(&activity)) {
+            char message[1024];
+            snprintf(message, sizeof(message), 
+                    "[ALERT] Suspicious file activity detected on %s (operations: %d, entropy: %.2f)",
+                    activity.path, activity.operation_count, activity.entropy);
+            handle_threat(message, -1);
+        }
+        
+        // Monitor proc 
         if (target_pid > 0) {
-            analyze_process();
+            process_info_t proc_results[10];
+            int proc_count = analyze_process_relationships(target_pid, proc_results, 10);
+            
+            for (int i = 0; i < proc_count; i++) {
+                char message[1024];
+                snprintf(message, sizeof(message),
+                        "[ALERT] Suspicious process detected: PID=%d, Path=%s",
+                        proc_results[i].pid, proc_results[i].exec_path);
+                handle_threat(message, proc_results[i].pid);
+            }
+            
+            // patterns
+            syscall_pattern_result_t pattern_results[5];
+            int pattern_count = analyze_syscall_patterns(target_pid, pattern_results, 5);
+            
+            for (int i = 0; i < pattern_count; i++) {
+                char message[1024];
+                snprintf(message, sizeof(message),
+                        "[ALERT] Suspicious syscall pattern detected: PID=%d, Type=%d, Confidence=%d%%, Description=%s",
+                        pattern_results[i].pid, pattern_results[i].pattern_type,
+                        pattern_results[i].confidence, pattern_results[i].description);
+                handle_threat(message, pattern_results[i].pid);
+            }
         }
 
         if (!keep_running) {
@@ -168,17 +241,20 @@ int main(int argc, char *argv[]) {
     }
 
     log_suspicious_activity("Shutting down");
-    cleanup_file_monitor();
+    cleanup_all();
     
-    if (target_pid > 0) {
-        cleanup_process_analyzer();
-        cleanup_syscall_monitor();
-    }
-
     if (run_as_daemon) {
         remove_pid_file(pid_file);
     }
     
     closelog();
     return EXIT_SUCCESS;
+}
+
+void cleanup_all(void) {
+    cleanup_file_monitor();
+    cleanup_behavioral_analysis();
+    cleanup_process_relationship();
+    cleanup_syscall_pattern();
+    cleanup_hash_monitor();
 }

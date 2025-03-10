@@ -1,32 +1,35 @@
-// process_relationship.h 
+// process_relationship.h
 
 #ifndef PROCESS_RELATIONSHIP_H
 #define PROCESS_RELATIONSHIP_H
 
 #include <stdbool.h>
 #include <sys/types.h>
-
-#define MAX_PROC_PATH 256
-#define MAX_CMDLINE 1024
-#define MAX_TRACKED_PROCS 200
+#include <limits.h>
 
 typedef struct {
     pid_t pid;
     pid_t ppid;
-    char exec_path[MAX_PROC_PATH];
-    char cmdline[MAX_CMDLINE];
-    char cwd[MAX_PROC_PATH];
-    int suspicious_score;
+    char exec_path[PATH_MAX];
+    char cmd_line[PATH_MAX];
+    bool suspicious;
 } process_info_t;
-bool init_process_relationship_analyzer(void);
-void track_process(pid_t pid);
-bool is_process_suspicious(pid_t pid);
-pid_t get_parent_pid(pid_t pid);
-bool is_suspicious_location(const char *path);
-bool get_process_cmdline(pid_t pid, char *buffer, size_t size);
-bool get_process_exe(pid_t pid, char *buffer, size_t size);
-bool get_process_cwd(pid_t pid, char *buffer, size_t size);
-bool has_suspicious_ancestry(pid_t pid);
-void cleanup_process_relationship_analyzer(void);
+
+/**
+ * Initialize the process relationship analyzer
+ * @return true on success, false on failure
+ */
+bool init_process_relationship(void);
+
+/**
+ * Analyze process relationships to find suspicious processes
+ * @param target_pid Specific PID to analyze, or -1 to analyze all processes
+ * @param results Array to store suspicious process information
+ * @param max_results Maximum number of results to return
+ * @return Number of suspicious processes found
+ */
+int analyze_process_relationships(pid_t target_pid, process_info_t *results, int max_results);
+
+void cleanup_process_relationship(void);
 
 #endif 

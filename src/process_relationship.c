@@ -5,262 +5,162 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-#include <fcntl.h>
-#include <sys/stat.h>
-#include <pthread.h>
-#include <linux/limits.h>
+#include <sys/types.h>
+#include <dirent.h>
+#include <limits.h>
 
-static process_info_t *process_info = NULL;
-static int process_count = 0;
-static pthread_mutex_t process_mutex = PTHREAD_MUTEX_INITIALIZER;
+#define MAX_PROCESSES 1024
+#define MAX_SUSPICIOUS_PATHS 16
 
-// List of suspicious locations where executables shouldn't normally run from
-static const char *suspicious_locations[] = {
-    "/tmp/",
-    "/dev/shm/",
+static const char *suspicious_paths[] = {
+    "/tmp/", 
+    "/dev/shm/", 
     "/run/user/",
     "/var/tmp/",
     NULL
 };
 
-static const char *suspicious_parents[] = {
-    "wget",
-    "curl",
-    "nc",
-    "netcat",
-    "python",
-    "perl",
-    "php",
-    "ruby",
-    NULL
-};
+// Process information cache
+static process_info_t process_cache[MAX_PROCESSES];
+static int process_count = 0;
 
-bool init_process_relationship_analyzer(void) {
-    process_info = (process_info_t*)calloc(MAX_TRACKED_PROCS, sizeof(process_info_t));
-    return (process_info != NULL);
-}
-
-static int find_or_create_process(pid_t pid) {
-    int i;
+// Read process information from /proc
+static bool read_process_info(pid_t pid, process_info_t *info) {
+    char path[PATH_MAX];
+    char buffer[PATH_MAX];
+    FILE *file;
     
-    // Look for existing entry
-    for (i = 0; i < process_count; i++) {
-        if (process_info[i].pid == pid) {
-            return i;
-        }
-    }
-
-    if (process_count < MAX_TRACKED_PROCS) {
-        i = process_count++;
-        process_info[i].pid = pid;
-        process_info[i].suspicious_score = 0;
-        
-        // Get process information
-        get_process_exe(pid, process_info[i].exec_path, MAX_PROC_PATH);
-        get_process_cmdline(pid, process_info[i].cmdline, MAX_CMDLINE);
-        get_process_cwd(pid, process_info[i].cwd, MAX_PROC_PATH);
-        process_info[i].ppid = get_parent_pid(pid);
-        
-        return i;
-    }
-
-    int min_score = process_info[0].suspicious_score;
-    int min_index = 0;
+    info->pid = pid;
+    info->ppid = 0;
+    info->exec_path[0] = '\0';
+    info->cmd_line[0] = '\0';
+    info->suspicious = false;
     
-    for (i = 1; i < process_count; i++) {
-        if (process_info[i].suspicious_score < min_score) {
-            min_score = process_info[i].suspicious_score;
-            min_index = i;
+    snprintf(path, PATH_MAX, "/proc/%d/exe", pid);
+    ssize_t len = readlink(path, buffer, PATH_MAX - 1);
+    if (len > 0) {
+        buffer[len] = '\0';
+        strncpy(info->exec_path, buffer, PATH_MAX - 1);
+        info->exec_path[PATH_MAX - 1] = '\0';
+    } else {
+        return false;
+    }
+    
+    snprintf(path, PATH_MAX, "/proc/%d/cmdline", pid);
+    file = fopen(path, "r");
+    if (file) {
+        size_t bytes = fread(buffer, 1, PATH_MAX - 1, file);
+        fclose(file);
+        if (bytes > 0) {
+            buffer[bytes] = '\0';
+            for (size_t i = 0; i < bytes; i++) {
+                if (buffer[i] == '\0') {
+                    buffer[i] = ' ';
+                }
+            }
+            strncpy(info->cmd_line, buffer, PATH_MAX - 1);
+            info->cmd_line[PATH_MAX - 1] = '\0';
         }
     }
     
-    process_info[min_index].pid = pid;
-    process_info[min_index].suspicious_score = 0;
-    get_process_exe(pid, process_info[min_index].exec_path, MAX_PROC_PATH);
-    get_process_cmdline(pid, process_info[min_index].cmdline, MAX_CMDLINE);
-    get_process_cwd(pid, process_info[min_index].cwd, MAX_PROC_PATH);
-    process_info[min_index].ppid = get_parent_pid(pid);
-    
-    return min_index;
-}
-
-void track_process(pid_t pid) {
-    pthread_mutex_lock(&process_mutex);
-    int idx = find_or_create_process(pid);
-    
-    // Calculate suspiciousness score
-    if (is_suspicious_location(process_info[idx].exec_path)) {
-        process_info[idx].suspicious_score += 5;
-    }
-    if (is_suspicious_location(process_info[idx].cwd)) {
-        process_info[idx].suspicious_score += 3;
+    snprintf(path, PATH_MAX, "/proc/%d/stat", pid);
+    file = fopen(path, "r");
+    if (file) {
+        if (fscanf(file, "%*d %*s %*c %d", &info->ppid) == 1) {
+            fclose(file);
+        } else {
+            fclose(file);
+            return false;
+        }
+    } else {
+        return false;
     }
     
-    if (has_suspicious_ancestry(pid)) {
-        process_info[idx].suspicious_score += 4;
-    }
-    
-    pthread_mutex_unlock(&process_mutex);
-}
-
-bool is_process_suspicious(pid_t pid) {
-    bool result = false;
-    pthread_mutex_lock(&process_mutex);
-    
-    for (int i = 0; i < process_count; i++) {
-        if (process_info[i].pid == pid) {
-            result = (process_info[i].suspicious_score >= 7);
+    for (int i = 0; suspicious_paths[i] != NULL; i++) {
+        if (strncmp(info->exec_path, suspicious_paths[i], 
+                   strlen(suspicious_paths[i])) == 0) {
+            info->suspicious = true;
             break;
         }
     }
     
-    pthread_mutex_unlock(&process_mutex);
-    return result;
+    return true;
 }
 
-pid_t get_parent_pid(pid_t pid) {
-    char path[64];
-    char buffer[256];
-    pid_t ppid = 0;
+bool init_process_relationship(void) {
+    process_count = 0;
+    return true;
+}
+
+int analyze_process_relationships(pid_t target_pid, process_info_t *results, int max_results) {
+    if (results == NULL || max_results <= 0) {
+        return 0;
+    }    
+    memset(results, 0, sizeof(process_info_t) * max_results);
     
-    snprintf(path, sizeof(path), "/proc/%d/stat", pid);
-    
-    FILE *f = fopen(path, "r");
-    if (!f) {
+    if (target_pid > 0) {
+        process_info_t info;
+        if (read_process_info(target_pid, &info)) {
+            memcpy(&results[0], &info, sizeof(process_info_t));
+            return 1;
+        }
         return 0;
     }
     
-    if (fgets(buffer, sizeof(buffer), f)) {
-        char *s = strrchr(buffer, ')');
-        if (s) {
-            int items = sscanf(s + 2, "%*c %d", &ppid);
-            if (items != 1) {
-                ppid = 0;
+    // Refresh process cache
+    DIR *proc_dir = opendir("/proc");
+    if (!proc_dir) {
+        return 0;
+    }
+    
+    process_count = 0;
+    struct dirent *entry;
+    
+    // First pass
+    while ((entry = readdir(proc_dir)) != NULL && process_count < MAX_PROCESSES) {
+        if (entry->d_name[0] < '0' || entry->d_name[0] > '9') {
+            continue;
+        }
+        
+        pid_t pid = atoi(entry->d_name);
+        if (pid > 0) {
+            if (read_process_info(pid, &process_cache[process_count])) {
+                process_count++;
             }
         }
     }
     
-    fclose(f);
-    return ppid;
-}
-
-bool is_suspicious_location(const char *path) {
-    if (!path || !*path) {
-        return false;
-    }
+    closedir(proc_dir);
     
-    for (int i = 0; suspicious_locations[i] != NULL; i++) {
-        if (strncmp(path, suspicious_locations[i], strlen(suspicious_locations[i])) == 0) {
-            return true;
-        }
-    }
+    // Second pass
+    int result_count = 0;
     
-    return false;
-}
-
-bool get_process_cmdline(pid_t pid, char *buffer, size_t size) {
-    char path[64];
-    
-    snprintf(path, sizeof(path), "/proc/%d/cmdline", pid);
-    
-    int fd = open(path, O_RDONLY);
-    if (fd < 0) {
-        buffer[0] = '\0';
-        return false;
-    }
-
-    ssize_t bytes_read = read(fd, buffer, size - 1);
-    close(fd);
-    
-    if (bytes_read <= 0) {
-        buffer[0] = '\0';
-        return false;
-    }
-    
-    // Replace null terminators with spaces for readability
-    for (ssize_t i = 0; i < bytes_read - 1; i++) {
-        if (buffer[i] == '\0') {
-            buffer[i] = ' ';
-        }
-    }
-    
-    buffer[bytes_read] = '\0';
-    return true;
-}
-
-
-bool get_process_exe(pid_t pid, char *buffer, size_t size) {
-    char path[64];
-    
-    snprintf(path, sizeof(path), "/proc/%d/exe", pid);
-    
-    ssize_t len = readlink(path, buffer, size - 1);
-    if (len < 0) {
-        buffer[0] = '\0';
-        return false;
-    }
-    
-    buffer[len] = '\0';
-    return true;
-}
-
-bool get_process_cwd(pid_t pid, char *buffer, size_t size) {
-    char path[64];
-    
-    snprintf(path, sizeof(path), "/proc/%d/cwd", pid);
-    
-    ssize_t len = readlink(path, buffer, size - 1);
-    if (len < 0) {
-        buffer[0] = '\0';
-        return false;
-    }
-    
-    buffer[len] = '\0';
-    return true;
-}
-
-
-bool has_suspicious_ancestry(pid_t pid) {
-    char exe_path[PATH_MAX];
-    pid_t current_pid = pid;
-    int depth = 0;
-    
-    // Trace back through parent processes
-    while (current_pid > 1 && depth < 10) {
-        if (!get_process_exe(current_pid, exe_path, sizeof(exe_path))) {
-            break;
+    for (int i = 0; i < process_count && result_count < max_results; i++) {
+        process_info_t *proc = &process_cache[i];
+        
+        // Skip kernel processes
+        if (proc->ppid <= 1) {
+            continue;
         }
         
-        // Extract the base name from the path
-        const char *base_name = strrchr(exe_path, '/');
-        if (base_name) {
-            base_name++; // Skip the slash
-        } else {
-            base_name = exe_path;
+        if (proc->suspicious) {
+            memcpy(&results[result_count++], proc, sizeof(process_info_t));
+            continue;
         }
         
-        // Check if the executable name is in our suspicious list
-        for (int i = 0; suspicious_parents[i] != NULL; i++) {
-            if (strcmp(base_name, suspicious_parents[i]) == 0) {
-                return true;
+        for (int j = 0; j < process_count; j++) {
+            if (process_cache[j].pid == proc->ppid) {
+                if (process_cache[j].suspicious && !proc->suspicious) {
+                    memcpy(&results[result_count++], proc, sizeof(process_info_t));
+                    break;
+                }
             }
         }
-        
-        // Check if running from suspicious location
-        if (is_suspicious_location(exe_path)) {
-            return true;
-        }
-        current_pid = get_parent_pid(current_pid);
-        depth++;
     }
     
-    return false;
+    return result_count;
 }
 
-void cleanup_process_relationship_analyzer(void) {
-    if (process_info) {
-        free(process_info);
-        process_info = NULL;
-    }
+void cleanup_process_relationship(void) {
     process_count = 0;
 }
