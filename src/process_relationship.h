@@ -15,21 +15,14 @@ typedef struct {
     bool suspicious;
 } process_info_t;
 
-/**
- * Initialize the process relationship analyzer
- * @return true on success, false on failure
- */
 bool init_process_relationship(void);
 
-/**
- * Analyze process relationships to find suspicious processes
- * @param target_pid Specific PID to analyze, or -1 to analyze all processes
- * @param results Array to store suspicious process information
- * @param max_results Maximum number of results to return
- * @return Number of suspicious processes found
- */
 int analyze_process_relationships(pid_t target_pid, process_info_t *results, int max_results);
+
+bool check_suspicious_parent_child(pid_t parent_pid, pid_t child_pid, 
+                                  int *suspicion_score, char *reason_buffer, 
+                                  size_t reason_size);
 
 void cleanup_process_relationship(void);
 
-#endif 
+#endif

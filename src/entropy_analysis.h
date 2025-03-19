@@ -5,23 +5,20 @@
 
 #include <stdlib.h>
 
-/**
- * Calculate Shannon entropy of a file's content
- * Returns a value between 0.0 (completely uniform) and 1.0 (completely random)
- * Encrypted files typically have entropy > 0.8
- * 
- * @param filepath Path to the file to analyze
- * @return Normalized entropy value between 0.0 and 1.0
- */
 double calculate_file_entropy(const char *filepath);
 
-/**
- * Calculate Shannon entropy of a buffer's content
- * 
- * @param data Pointer to the data buffer
- * @param size Size of the data buffer
- * @return Normalized entropy value between 0.0 and 1.0
- */
 double calculate_buffer_entropy(const unsigned char *data, size_t size);
 
-#endif 
+double calculate_entropy(const char *filepath, int timeout_ms);
+
+void init_entropy_tracking(void);
+
+void track_high_entropy_file(const char *filepath, double entropy);
+
+int check_high_entropy_pattern(int threshold, int window_seconds);
+
+void get_high_entropy_summary(char *message, size_t message_size, int limit);
+
+double analyze_file_entropy(const char *filepath);
+
+#endif
