@@ -1,0 +1,60 @@
+
+[2025-03-19 11:54:25] RansomGuard logger initialized (verbosity=1)
+[2025-03-19 11:54:25] [ALERT] Warning: Could not open config file, using default settings
+[2025-03-19 11:54:25] [ALERT] Monitoring started
+[2025-03-19 11:54:25] [ALERT] Configuration: sensitivity=2, verbosity=1, kill_suspicious=no, max_files=5000
+[2025-03-19 11:54:32] [ALERT] Received termination signal, shutting down...
+[2025-03-19 11:54:32] [ALERT] Shutting down
+
+---- RansomGuard logger closed ----
+
+[2025-03-19 11:54:59] RansomGuard logger initialized (verbosity=1)
+[2025-03-19 11:54:59] [ALERT] Warning: Could not open config file, using default settings
+[2025-03-19 11:54:59] [ALERT] Monitoring started
+[2025-03-19 11:54:59] [ALERT] Configuration: sensitivity=2, verbosity=1, kill_suspicious=no, max_files=5000
+[2025-03-19 11:55:15] [ALERT] [SUSPICIOUS] Process 5443 (ransomguard) - Score: 27 - Potentially suspicious activity
+Factors: Network activity with file modifications, 
+Paths: /home/nonsec/ransom/test_dir/.hi.txt.swp
+Recommended action: Monitor for additional suspicious behavior
+[2025-03-19 11:55:15] [ALERT] [SUSPICIOUS] Process 5443 (ransomguard) - Score: 27 - Potentially suspicious activity
+Factors: Network activity with file modifications, 
+Paths: /home/nonsec/ransom/test_dir/.hi.txt.swp
+Recommended action: Monitor for additional suspicious behavior
+[2025-03-19 11:55:15] [ALERT] [SUSPICIOUS] Process 5443 (ransomguard) - Score: 27 - Potentially suspicious activity
+Factors: Network activity with file modifications, 
+Paths: /home/nonsec/ransom/test_dir/.hi.txt.swp
+Recommended action: Monitor for additional suspicious behavior
+[2025-03-19 11:55:15] [ALERT] [ALERT] Suspicious file activity: /home/nonsec/ransom/test_dir/.hi.txt.swp, Parent process: Suspicious parent-child: Process 1880 is rapidly spawning child processes (possible fork bomb or ransomware)
+[2025-03-19 11:55:15] [ALERT] [SUSPICIOUS] Process 5443 (ransomguard) - Score: 27 - Potentially suspicious activity
+Factors: Network activity with file modifications, 
+Paths: /home/nonsec/ransom/test_dir/.hi.txt.swp
+Recommended action: Monitor for additional suspicious behavior
+[2025-03-19 11:55:15] [ALERT] [SUSPICIOUS] Process 5443 (ransomguard) - Score: 27 - Potentially suspicious activity
+Factors: Network activity with file modifications, 
+Paths: /home/nonsec/ransom/test_dir/.hi.txt.swp
+Recommended action: Monitor for additional suspicious behavior
+[2025-03-19 11:55:18] [ALERT] [SUSPICIOUS] Process 5443 (ransomguard) - Score: 20 - Potentially suspicious activity
+Factors: High frequency file modifications, Network activity with file modifications, 
+Paths: /home/nonsec/ransom/test_dir/hi.txt
+Recommended action: Monitor for additional suspicious behavior
+[2025-03-19 11:55:18] [ALERT] [ALERT] Rapid file modifications detected - Process 5443 (ransomguard) modified 6 files in 10 seconds - Recent files: hi.txt, .hi.txt.swp, .hi.txt.swp
+[2025-03-19 11:55:18] [ALERT] [INFO] Event score: 20 (threshold: 20)
+[2025-03-19 11:55:18] [ALERT] [SUSPICIOUS] Process 5443 (ransomguard) - Score: 20 - Potentially suspicious activity
+Factors: High frequency file modifications, Network activity with file modifications, 
+Paths: /home/nonsec/ransom/test_dir/hi.txt
+Recommended action: Monitor for additional suspicious behavior
+[2025-03-19 11:55:18] [ALERT] [ALERT] Rapid file modifications detected - Process 5443 (ransomguard) modified 6 files in 10 seconds - Recent files: hi.txt, hi.txt, .hi.txt.swp
+[2025-03-19 11:55:18] [ALERT] [INFO] Event score: 20 (threshold: 20)
+[2025-03-19 11:55:18] [ALERT] [SUSPICIOUS] Process 5443 (ransomguard) - Score: 27 - Potentially suspicious activity
+Factors: Network activity with file modifications, 
+Paths: /home/nonsec/ransom/test_dir/.hi.txt.swp
+Recommended action: Monitor for additional suspicious behavior
+[2025-03-19 11:58:42] [ALERT] Received termination signal, shutting down...
+[2025-03-19 11:58:42] [ALERT] Shutting down
+
+---- RansomGuard logger closed ----
+
+[2025-03-19 11:58:44] RansomGuard logger initialized (verbosity=1)
+[2025-03-19 11:58:44] [ALERT] Warning: Could not open config file, using default settings
+[2025-03-19 11:58:44] [ALERT] Monitoring started
+[2025-03-19 11:58:44] [ALERT] Configuration: sensitivity=2, verbosity=1, kill_suspicious=no, max_files=5000

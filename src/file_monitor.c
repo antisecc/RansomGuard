@@ -13,6 +13,12 @@
 #include <time.h>
 #include <sys/time.h>
 #include <sys/sysinfo.h>
+#include "logger.h"
+#include "process_analyzer.h"
+#include "common_defs.h"
+
+// External dependencies
+volatile int keep_running = 1; // Or declare extern if defined elsewhere
 
 #define MAX_TRACKED_PIDS 128
 #define EVENTS_PER_PID 64
@@ -406,6 +412,8 @@ void prepare_scoring_factors(scoring_factors_t *factors, const char *path,
     
     factors->paths[0] = (char *)path;
     factors->path_count = 1;
+
+    (void)op_type; // Unused for now
     
     const char *basename = strrchr(path, '/');
     if (basename && basename[1] == '.') {
@@ -573,7 +581,15 @@ bool process_has_file_open(pid_t pid, const char *target_file) {
         char link_path[PATH_MAX];
         ssize_t len;
         
-        snprintf(link_path, sizeof(link_path), "%s/%s", fd_path, fd_entry->d_name);
+        // Check if combined path would be too long
+        if (strlen(fd_path) + strlen(fd_entry->d_name) + 2 > PATH_MAX) {
+            continue;  // Skip if too long
+        }
+        
+        // Safe alternative to snprintf
+        strcpy(link_path, fd_path);
+        strcat(link_path, "/");
+        strcat(link_path, fd_entry->d_name);
         
         len = readlink(link_path, link_target, sizeof(link_target) - 1);
         if (len < 0) {

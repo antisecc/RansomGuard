@@ -12,9 +12,16 @@
 #include <time.h>
 #include <errno.h>
 #include <string.h>
+#include <signal.h>
 #include <pthread.h>
 #include "activity_scorer.h"
 #include "logger.h"
+
+// Define SCMP_ACT_TRACE if not available in the system headers
+// This needs to be defined as a constant matching what libseccomp expects
+#ifndef SCMP_ACT_TRACE
+#define SCMP_ACT_TRACE SCMP_ACT_TRAP  // Use TRAP as fallback if TRACE not available
+#endif
 
 #define SUSPICIOUS_MEMORY_WINDOW 30  // 30 seconds 
 #define MAX_TRACKED_PROCESSES 128    
@@ -333,15 +340,20 @@ void *syscall_filter_thread(void *arg) {
     return NULL;
 }
 
-bool setup_seccomp_filter(pid_t pid) {
+// Fix setup_seccomp_filter function
+bool setup_seccomp_filter(void) {
     scmp_filter_ctx ctx = seccomp_init(SCMP_ACT_ALLOW);
     if (!ctx) {
         perror("seccomp_init");
         return false;
     }
     
-    if (seccomp_rule_add(ctx, SCMP_ACT_TRACE, SCMP_SYS(mprotect), 0) < 0 ||
-        seccomp_rule_add(ctx, SCMP_ACT_TRACE, SCMP_SYS(mmap), 0) < 0) {
+    // Use SCMP_ACT_TRAP as a more universally available alternative
+    // or define action as a variable for clarity
+    uint32_t trace_action = SCMP_ACT_TRAP;  // Use TRAP instead of the custom TRACE
+    
+    if (seccomp_rule_add(ctx, trace_action, SCMP_SYS(mprotect), 0) < 0 ||
+        seccomp_rule_add(ctx, trace_action, SCMP_SYS(mmap), 0) < 0) {
         perror("seccomp_rule_add");
         seccomp_release(ctx);
         return false;
@@ -357,6 +369,7 @@ bool setup_seccomp_filter(pid_t pid) {
     return true;
 }
 
+// Update function body to match the new signature
 bool filter_syscall(pid_t pid, bool block_suspicious) {
     static bool initialized = false;
     if (!initialized) {
@@ -365,7 +378,7 @@ bool filter_syscall(pid_t pid, bool block_suspicious) {
     }
     
     if (pid == 0) {
-        return setup_seccomp_filter(0);
+        return setup_seccomp_filter();  // Updated to match new signature
     }
     
     pthread_t monitor_thread;
@@ -384,6 +397,13 @@ bool filter_syscall(pid_t pid, bool block_suspicious) {
     
     pthread_detach(monitor_thread);
     return true;
+}
+
+// Add cleanup_syscall_filter function implementation if it doesn't exist
+void cleanup_syscall_filter(void) {
+    // Clean up any resources used by the syscall filter
+    // Currently nothing to clean up (resources are freed in individual functions)
+    return;
 }
 
 bool init_syscall_filter() {

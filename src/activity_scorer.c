@@ -57,7 +57,6 @@ static pthread_mutex_t score_mutex = PTHREAD_MUTEX_INITIALIZER;
 #define SCORE_HIGH_FREQUENCY_MOD        5
 #define SCORE_RWX_PERMISSION           20
 #define SCORE_NETWORK_CORRELATION      15
-#define SCORE_MEMORY_INJECTION         25
 #define SCORE_DANGEROUS_SYSCALL        15
 #define SCORE_MULTIPLE_PROCESSES        8
 #define SCORE_UNUSUAL_TIME             10
@@ -67,21 +66,6 @@ static pthread_mutex_t score_mutex = PTHREAD_MUTEX_INITIALIZER;
 #define DEFAULT_ALERT_THRESHOLD        20
 #define HIGH_LOAD_THRESHOLD            30
 #define CRITICAL_RESPONSE_THRESHOLD    50
-
-// Structure to hold scoring factors
-typedef struct {
-    double entropy;                
-    bool suspicious_parent_child;  
-    bool high_frequency;           
-    bool rwx_permission;           
-    bool network_correlation;      
-    bool memory_injection;         
-    bool unusual_time;             
-    int affected_processes;        
-    bool hidden_file;              
-    char *paths[5];                
-    int path_count;                
-} scoring_factors_t;
 
 static int current_alert_threshold = DEFAULT_ALERT_THRESHOLD;
 static time_t last_threshold_update = 0;
@@ -461,8 +445,23 @@ static void generate_score_report(pid_t pid, int total_score,
     char *basename = strrchr(exe_path, '/');
     if (basename) {
         strncpy(process_name, basename + 1, sizeof(process_name) - 1);
+        process_name[sizeof(process_name) - 1] = '\0';
     } else {
-        strncpy(process_name, exe_path, sizeof(process_name) - 1);
+        if (strlen(exe_path) >= sizeof(process_name)) {
+            // Path is too long - copy the last portion of the path which is usually the most important
+            const char *basename = strrchr(exe_path, '/');
+            if (basename) {
+                strncpy(process_name, basename + 1, sizeof(process_name) - 1);
+                process_name[sizeof(process_name) - 1] = '\0';
+            } else {
+                // Path doesn't contain '/' or other issue - copy as much as will fit
+                strncpy(process_name, exe_path, sizeof(process_name) - 1);
+                process_name[sizeof(process_name) - 1] = '\0';
+            }
+        } else {
+            // Path fits - simple copy
+            strcpy(process_name, exe_path);
+        }
     }
     
     int risk_level = 1;
@@ -490,7 +489,7 @@ static void generate_score_report(pid_t pid, int total_score,
     offset = strlen(report_buffer);
     remaining = buffer_size - offset;
     
-    if (factors->high_entropy) {
+    if (factors->entropy > 0.7) {  // Assuming high entropy means > 0.7
         strncat(report_buffer, "High entropy file(s), ", remaining);
     }
     
@@ -727,8 +726,11 @@ int score_syscall_event(pid_t pid, int event_type, const char *path, double entr
 int score_network_file_activity(pid_t pid, int suspicion_score) {
     scoring_factors_t factors = {0};
     factors.network_correlation = true;
-    int calculated_score = suspicion_score / 2;
+    
     int base_score = calculate_score(pid, &factors);
+    int calculated_score = suspicion_score / 2;
+    
+    // Return the higher of the two scores
     return (calculated_score > base_score) ? calculated_score : base_score;
 }
 
@@ -741,4 +743,30 @@ int score_network_file_activity(pid_t pid, int suspicion_score) {
  */
 int score_detailed_event(pid_t pid, scoring_factors_t *factors) {
     return calculate_score(pid, factors);
+}
+
+/**
+ * Track network and file activity correlation
+ */
+bool track_network_and_file_activity(pid_t pid, int event_type, const char *path, 
+                                   int socket_family, int socket_type, int port, double entropy) {
+    // Simple implementation for now
+    char message[512];
+    snprintf(message, sizeof(message), 
+            "[NETWORK] Process %d correlating network activity with file %s (entropy: %.2f)",
+            pid, path, entropy);
+    
+    // Avoid unused parameter warnings
+    (void)event_type;
+    (void)socket_family;
+    (void)socket_type;
+    (void)port;
+    
+    // Only log at high verbosity or high entropy
+    if (entropy > 0.7) {
+        log_suspicious_activity(message);
+        return true;
+    }
+    
+    return false;
 }

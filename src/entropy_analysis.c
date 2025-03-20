@@ -9,6 +9,9 @@
 #include <time.h>
 #include <errno.h>
 #include <sys/stat.h>
+#include <string.h>  // For strncpy, memset, strlen, strncat, strrchr
+#include <limits.h>  // For PATH_MAX
+#include "logger.h"  // For log_suspicious_activity
 
 #define BUFFER_SIZE 4096
 #define BYTE_RANGE 256
@@ -227,10 +230,11 @@ double calculate_entropy(const char *filepath, int timeout_ms) {
     return entropy;
 }
 
-void init_entropy_tracking(void) {
+bool init_entropy_tracking(void) {
     memset(high_entropy_events, 0, sizeof(high_entropy_events));
     entropy_event_count = 0;
     entropy_event_index = 0;
+    return true;  // Return success
 }
 
 void track_high_entropy_file(const char *filepath, double entropy) {
@@ -253,6 +257,9 @@ void track_high_entropy_file(const char *filepath, double entropy) {
 }
 
 int check_high_entropy_pattern(int threshold, int window_seconds) {
+    // Mark the threshold parameter as used to avoid the unused parameter warning
+    (void)threshold; // Suppress unused parameter warning
+    
     time_t now = time(NULL);
     int count = 0;
     
@@ -343,4 +350,9 @@ double analyze_file_entropy(const char *filepath) {
 bool init_entropy_analysis(void) {
     init_entropy_tracking();
     return true;
+}
+
+void cleanup_entropy_analysis(void) {
+    // Clean up entropy analysis resources
+    // Currently nothing to clean up
 }

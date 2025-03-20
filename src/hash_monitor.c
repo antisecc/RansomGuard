@@ -1,5 +1,5 @@
 // hash_monitor.c
-
+#include "common_defs.h"
 #include "hash_monitor.h"
 #include "entropy_analysis.h"
 #include <stdio.h>
@@ -13,6 +13,8 @@
 #include <linux/sock_diag.h>
 #include <linux/inet_diag.h>
 #include <time.h>
+#include <unistd.h>   // For close, sleep
+#include "logger.h"   // For log_suspicious_activity
 
 #define MAX_TRACKED_PIDS 256
 #define SOCKET_EVENTS_PER_PID 16
@@ -405,7 +407,7 @@ static int calculate_network_file_suspicion(network_file_tracker_t *tracker) {
             int file_idx = (tracker->current_file_idx - j - 1 + SOCKET_EVENTS_PER_PID) % SOCKET_EVENTS_PER_PID;
             file_event_t *file_event = &tracker->file_events[file_idx];
             
-            time_t time_diff = abs(socket_event->timestamp - file_event->timestamp);
+            time_t time_diff = labs(socket_event->timestamp - file_event->timestamp);
             
             if (time_diff <= NETWORK_FILE_WINDOW) {
                 close_correlation = true;
@@ -568,6 +570,9 @@ void track_file_event(pid_t pid, const char *path, double entropy) {
 }
 
 void *netlink_monitoring_thread(void *arg) {
+    // Mark arg as used to avoid the warning
+    (void)arg;  // Suppress unused parameter warning
+    
     int sock_fd = socket(AF_NETLINK, SOCK_DGRAM, NETLINK_INET_DIAG);
     if (sock_fd < 0) {
         perror("Failed to create netlink socket");
@@ -621,42 +626,41 @@ void stop_netlink_monitoring(void) {
     pthread_join(netlink_thread, NULL);
 }
 
-bool track_network_and_file_activity(pid_t pid, int event_type, const char *path, 
-                                    int socket_family, int socket_type, int port, double entropy) {
-    if (pid <= 0) {
-        return false;
-    }
-    
-    static bool initialized = false;
-    if (!initialized) {
-        if (!init_network_file_tracking()) {
-            return false;
-        }
-        initialized = true;
-    }
-    
-    switch (event_type) {
-        case TRACK_SOCKET:
-            track_socket_event(pid, socket_family, socket_type, port);
-            break;
-            
-        case TRACK_FILE:
-            if (path) {
-                track_file_event(pid, path, entropy);
-            }
-            break;
-            
-        default:
-            return false;
-    }
-    
-    network_file_tracker_t *tracker = find_network_file_tracker(pid);
-    if (!tracker) {
-        return false;
-    }
-    
-    return tracker->suspicious_pattern;
-}
+// static void track_network_and_file_activity(pid_t pid, const char *file_path, double entropy) {
+//     if (pid <= 0) {
+//         return;
+//     }
+//     
+//     static bool initialized = false;
+//     if (!initialized) {
+//         if (!init_network_file_tracking()) {
+//             return;
+//         }
+//         initialized = true;
+//     }
+//     
+//     switch (event_type) {
+//         case TRACK_SOCKET:
+//             track_socket_event(pid, socket_family, socket_type, port);
+//             break;
+//             
+//         case TRACK_FILE:
+//             if (path) {
+//                 track_file_event(pid, path, entropy);
+//             }
+//             break;
+//             
+//         default:
+//             return;
+//     }
+//     
+//     network_file_tracker_t *tracker = find_network_file_tracker(pid);
+//     if (!tracker) {
+//         return;
+//     }
+//     
+//     return tracker->suspicious_pattern;
+// }
 
 void cleanup_network_file_tracking(void) {
     if (netlink_monitoring_active) {

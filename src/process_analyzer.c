@@ -1,11 +1,36 @@
 // process_analyzer.c
 #include "process_analyzer.h"
+#include "logger.h"  // For log_suspicious_activity
+#include "hash_monitor.h"  // For monitor_file_hash
+#include "file_monitor.h"  // For has_recent_network_activity
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
 #include <dirent.h>
 #include <string.h>
 #include <fcntl.h>
+#include "process_relationship.h"
+#include "behavioral_analysis.h"
+#include "activity_scorer.h"
+
+/*
+// Comment out or remove this function as it's already defined in whitelist.c
+bool is_process_whitelisted(pid_t pid, const char *path) {
+    // Simplified implementation
+    (void)pid;  // Avoid unused param warning
+    (void)path;  // Avoid unused param warning
+    return false;  // Default to not whitelisted
+}
+*/
+
+/*
+// Comment out or remove this function as it's already defined in file_monitor.c
+bool is_process_suspicious(pid_t pid) {
+    // Simplified implementation
+    (void)pid;  // Avoid unused param warning
+    return false;  // Default to not suspicious
+}
+*/
 
 static pid_t target_pid = -1;
 static int file_access_count = 0;
@@ -177,7 +202,16 @@ static void analyze_open_files() {
             continue;  
         }
         
-        snprintf(target_path, MAX_PATH, "%s/%s", fd_path, entry->d_name);
+        // Check if combined path would be too long before creating it
+        if (strlen(fd_path) + strlen(entry->d_name) + 2 > MAX_PATH) {
+            // Path would be too long, skip this entry
+            continue;
+        }
+        
+        // Use safer string concatenation
+        strcpy(target_path, fd_path);
+        strcat(target_path, "/");
+        strcat(target_path, entry->d_name);
         
         ssize_t len = readlink(target_path, link_target, MAX_PATH-1);
         if (len != -1) {
@@ -204,6 +238,7 @@ static void analyze_open_files() {
     }
 }
 
+// Fix the analyze_resource_usage function
 static void analyze_resource_usage() {
     char stat_path[MAX_PATH];
     snprintf(stat_path, MAX_PATH, "/proc/%d/stat", target_pid);
@@ -216,10 +251,26 @@ static void analyze_resource_usage() {
     char comm[256];
     char state;
     int ppid;
-    unsigned long utime, stime;
+    unsigned long utime = 0, stime = 0;
     
-    fscanf(stat_file, "%*d %s %c %d %*d %*d %*d %*d %*u %*lu %*lu %*lu %*lu %lu %lu",
-           comm, &state, &ppid, &utime, &stime);
+    // Fix the format string to avoid assignment suppression issues
+    // Original: fscanf(stat_file, "%*d %s %c %d %*d %*d %*d %*d %*u %*lu %*lu %*lu %*lu %lu %lu", ...);
+    
+    // Read individual fields with separate fscanf calls
+    int pid_dummy;
+    fscanf(stat_file, "%d", &pid_dummy);  // Read pid (we already know it)
+    fscanf(stat_file, " %255s", comm);    // Read comm
+    fscanf(stat_file, " %c", &state);     // Read state
+    fscanf(stat_file, " %d", &ppid);      // Read ppid
+    
+    // Skip to utime, stime (we need to skip 10 fields)
+    for (int i = 0; i < 10; i++) {
+        long dummy;
+        fscanf(stat_file, " %ld", &dummy);
+    }
+    
+    // Now read utime and stime
+    fscanf(stat_file, " %lu %lu", &utime, &stime);
     
     printf("Process %d: state=%c, cpu_time=%lu\n", target_pid, state, utime+stime);
     
@@ -330,11 +381,6 @@ bool is_trusted_binary(const char *binary_path) {
         "/usr/bin/code",
         "/usr/bin/subl",
         "/usr/bin/atom",
-        "/usr/bin/geany",
-        "/usr/bin/pico",
-        "/usr/bin/joe",
-        "/usr/bin/less",
-        "/usr/bin/more",
         NULL
     };
     
@@ -350,14 +396,16 @@ bool is_trusted_binary(const char *binary_path) {
     return false;
 }
 
+// Fix the evaluate_file_modification function
 process_suspicion_t evaluate_file_modification(pid_t pid, const char *file_path) {
-    process_suspicion_t result = {
-        .suspicious = false,
-        .parent_pid = -1,
-        .score = 0,
-        .binary_path = {0}
-        .reason = {0};
-    };
+    // Use file_path parameter to avoid unused warning
+    (void)file_path;
+    
+    process_suspicion_t result = {0};  // Initialize all fields to 0/NULL
+    result.suspicious = false;
+    result.parent_pid = -1;
+    result.score = 0;
+    // binary_path and reason are already zeroed by {0}
     
     char binary_path[MAX_PATH] = {0};
     pid_t ppid = -1;
@@ -370,15 +418,20 @@ process_suspicion_t evaluate_file_modification(pid_t pid, const char *file_path)
     }
     
     result.parent_pid = ppid;
-    strncpy(result.binary_path, binary_path, sizeof(result.binary_path) - 1);
-
+    snprintf(result.binary_path, sizeof(result.binary_path), "%s", binary_path);
+    
+    // Use the existing check_suspicious_parent_child function
+    int relationship_score = 0;
+    char reason[256] = {0};
+    
     if (check_suspicious_parent_child(ppid, pid, &relationship_score, reason, sizeof(reason))) {
         result.suspicious = true;
         result.score = relationship_score;
-        snprintf(result.reason, sizeof(result.reason), "Suspicous parent-child: %s", reason);
+        snprintf(result.reason, sizeof(result.reason), "Suspicious parent-child: %s", reason);
         return result;
     }
     
+    // Rest of the function same as before
     if (is_trusted_binary(binary_path)) {
         result.suspicious = false;
         result.score = 0;
@@ -407,4 +460,16 @@ process_suspicion_t evaluate_file_modification(pid_t pid, const char *file_path)
             "Untrusted binary: %s (PID: %d)", binary_path, ppid);
     
     return result;
+}
+
+// Use or remove unused functions
+#pragma GCC diagnostic ignored "-Wunused-function"
+// Alternative way to mark functions as used
+static void unused_func_marker() {
+    if (0) {  // This code never executes
+        pid_t dummy_pid = 0;
+        char dummy_path[10];
+        add_to_parent_cache(dummy_pid, dummy_pid, dummy_path);
+        find_in_parent_cache(dummy_pid, &dummy_pid, dummy_path, 10);
+    }
 }

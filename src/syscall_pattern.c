@@ -103,6 +103,10 @@ static bool match_pattern(const long *history, int history_len,
 }
 
 void record_syscall(pid_t pid, long syscall_nr, long *args, int arg_count) {
+    // Mark unused parameters to avoid compiler warnings
+    (void)args;       // Explicitly mark as unused
+    (void)arg_count;  // Explicitly mark as unused
+    
     if (pid <= 0) {
         return;
     }

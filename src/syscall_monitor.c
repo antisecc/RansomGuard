@@ -9,6 +9,7 @@
 #include <sys/syscall.h>
 #include <errno.h>
 #include <string.h>
+#include <linux/ptrace.h>
 
 static pid_t monitored_pid = -1;
 

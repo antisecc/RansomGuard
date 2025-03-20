@@ -11,6 +11,11 @@
 #include <time.h>
 
 #define FORK_TRACK_SIZE 64 
+#define MAX_PROCESSES 256
+
+void init_fork_tracker(void);
+void init_relationship_cache(void);
+
 typedef struct {
     pid_t parent_pid;                    
     time_t first_fork_time;        
@@ -70,7 +75,7 @@ static const char *suspicious_paths[] = {
     NULL
 };
 
-static process_info_t process_cache[MAX_PROCESSES];
+static process_info_t process_cache[MAX_PROCESSES] __attribute__((unused));
 static int process_count = 0;
 
 static bool read_process_info(pid_t pid, process_info_t *info) {
@@ -137,7 +142,7 @@ static bool read_process_info(pid_t pid, process_info_t *info) {
 
 bool init_process_relationship(void) {
     process_count = 0;
-init_fork_tracker();
+    init_fork_tracker();
     init_relationship_cache();
     return true;
 }

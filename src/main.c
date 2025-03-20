@@ -7,22 +7,23 @@
 #include <getopt.h>
 #include <syslog.h>
 #include <sys/resource.h>
+#include <ctype.h>
+#include "common_defs.h"  // First, for shared definitions
 #include "file_monitor.h"
-#include "syscall_monitor.h"
+#include "activity_scorer.h"
+#include "hash_monitor.h"
 #include "process_analyzer.h"
-#include "syscall_filter.h"
+#include "entropy_analysis.h"
+#include "logger.h"
+#include "syscall_monitor.h"
 #include "response.h"
 #include "daemon_utils.h"
 #include "behavioral_analysis.h"
-#include "entropy_analysis.h"
 #include "process_relationship.h"
 #include "syscall_pattern.h"
-#include "hash_monitor.h"
 #include "whitelist.h"
-#include "activity_scorer.h"
-#include "logger.h"
-
-volatile int keep_running = 1;
+#include "syscall_filter.h"
+extern volatile sig_atomic_t keep_running;
 static volatile int force_exit = 0;
 static const char *DEFAULT_PID_FILE = "/var/run/ransomguard.pid";
 static const char *DEFAULT_CONFIG_FILE = "/etc/ransomguard.conf";
@@ -191,7 +192,7 @@ bool init_all(const char *watch_dir, const char *config_file, pid_t target_pid) 
     }
     
     if (!init_process_relationship()) {
-        log_suspicious_activity("Failed to initialize process relationship analysis");
+        log_error("Failed to initialize process relationship tracking");
         return false;
     }
     
@@ -363,20 +364,32 @@ int main(int argc, char *argv[]) {
         suspicious_activity_t activity;
         if (detect_suspicious_activity(&activity)) {
             char message[1024];
+            char truncated_path[256]; // Use a smaller buffer for the path
+            
+            // Copy the path to our truncated buffer safely
+            strncpy(truncated_path, activity.path, sizeof(truncated_path) - 4);
+            truncated_path[sizeof(truncated_path) - 4] = '\0';
+            
+            // Add ellipsis if the path was truncated
+            if (strlen(activity.path) > sizeof(truncated_path) - 4) {
+                strcat(truncated_path, "...");
+            }
+            
             snprintf(message, sizeof(message), 
                     "[ALERT] Suspicious file activity detected on %s (operations: %d, entropy: %.2f)",
-                    activity.path, activity.operation_count, activity.entropy);
+                    truncated_path, activity.operation_count, activity.entropy);
             
-            int severity = 1; // 
+            int severity = 1; // Default to low
             if (activity.entropy > 0.9 && activity.operation_count > file_ops_threshold) {
-                severity = 3; // 
+                severity = 3; // Critical
             } else if (activity.entropy > 0.7 || activity.operation_count > file_ops_threshold / 2) {
-                severity = 2; // 
+                severity = 2; // High
             }
             
             handle_threat(message, activity.pid, severity);
         }
         
+      
         network_file_stats_t net_stats;
         get_network_file_stats(&net_stats);
         
@@ -394,9 +407,20 @@ int main(int argc, char *argv[]) {
             
             for (int i = 0; i < proc_count; i++) {
                 char message[1024];
+                char truncated_path[256]; // Use a smaller buffer for the path
+                
+                // Copy the path to our truncated buffer safely
+                strncpy(truncated_path, proc_results[i].exec_path, sizeof(truncated_path) - 4);
+                truncated_path[sizeof(truncated_path) - 4] = '\0';
+                
+                // Add ellipsis if the path was truncated
+                if (strlen(proc_results[i].exec_path) > sizeof(truncated_path) - 4) {
+                    strcat(truncated_path, "...");
+                }
+                
                 snprintf(message, sizeof(message),
                         "[ALERT] Suspicious process detected: PID=%d, Path=%s",
-                        proc_results[i].pid, proc_results[i].exec_path);
+                        proc_results[i].pid, truncated_path);
                 handle_threat(message, proc_results[i].pid, 2);
             }
             
@@ -405,10 +429,21 @@ int main(int argc, char *argv[]) {
             
             for (int i = 0; i < pattern_count; i++) {
                 char message[1024];
+                char truncated_desc[256]; // Use a smaller buffer for the description
+                
+                // Copy the description to our truncated buffer safely
+                strncpy(truncated_desc, pattern_results[i].description, sizeof(truncated_desc) - 4);
+                truncated_desc[sizeof(truncated_desc) - 4] = '\0';
+                
+                // Add ellipsis if the description was truncated
+                if (strlen(pattern_results[i].description) > sizeof(truncated_desc) - 4) {
+                    strcat(truncated_desc, "...");
+                }
+                
                 snprintf(message, sizeof(message),
                         "[ALERT] Suspicious syscall pattern detected: PID=%d, Type=%d, Confidence=%d%%, Description=%s",
                         pattern_results[i].pid, pattern_results[i].pattern_type,
-                        pattern_results[i].confidence, pattern_results[i].description);
+                        pattern_results[i].confidence, truncated_desc);
                 
                 int severity = 1;
                 if (pattern_results[i].confidence >= 90) {
@@ -458,4 +493,5 @@ void cleanup_all(void) {
     cleanup_whitelist();
     cleanup_activity_scorer();
     cleanup_logger();
+    cleanup_process_relationship();
 }

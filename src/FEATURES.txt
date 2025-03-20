@@ -1,0 +1,35 @@
+1. Process Filtering Based on Parent-Child Relationship
+functionality to process_analyzer.c to identify the parent process for file modification events. Use getppid() to identify the parent PID and then read /proc/[pid]/exe to determine the parent binary. Ignore the event if the parent binary matches any of the trusted binaries defined in behavior_rules.h (/bin/bash, /usr/bin/nano, /usr/bin/vim). If the parent process is not part of the trusted list, mark it as a suspicious event and pass it to the scoring mechanism. If the parent process is unknown, or if the binary path is located in /tmp, /dev/shm, or /run, pass it to the scoring mechanism as a suspicious event. Ensure that the parent process lookup is non-blocking to prevent performance issues under high load.
+
+
+
+2. Suspicious Parent-Child Process Detection
+function check_suspicious_parent_child() to process_relationship.c that takes two PIDs (parent and child). Resolve the binary paths for both using /proc/[pid]/exe. Compare the resolved paths against the list of suspicious parent-child pairs defined in behavior_rules.h. If the pair is marked as suspicious, pass it to the scoring system. Ensure the function is efficient by caching recent parent-child pairs to prevent excessive /proc access. If a process forks more than three times within five seconds, flag it as suspicious even if the binary paths are unknown.
+
+
+3. High Frequency Modification Detection
+function track_file_modification_frequency() in file_monitor.c that maintains a ring buffer to store timestamps of file modifications. Track the frequency of modifications per process. If more than 5 files are modified within 10 seconds by the same PID or its child processes, mark it as suspicious and pass it to the scoring system. Ensure that the buffer size is sufficient to handle high-volume events without exceeding memory limits. Use CLOCK_MONOTONIC for consistent timestamping across system sleep and wake cycles. Optimize the lookup to avoid linear search delays under high load.
+
+
+4. Entropy-Based Modification Detection
+function calculate_entropy() to entropy_analysis.c that computes the Shannon entropy of a modified file. Open the file using open() with O_RDONLY, read the content in 4 KB chunks, and compute the byte frequency distribution. Use the formula entropy = -∑(p * log2(p)) where p is the frequency of each byte. If the entropy exceeds 7.5, pass the event to the scoring mechanism. Also track entropy over time — if more than 5 high-entropy files are modified within 30 seconds, increase the event score. Ensure that file reads are non-blocking and avoid excessive memory use with large files.
+
+
+5. RWX Memory Permission Detection (Shellcode-Like Behavior)
+function filter_syscall() to syscall_filter.c that intercepts mprotect() and mmap() calls using ptrace or a seccomp filter. If mprotect() attempts to set PROT_READ | PROT_WRITE | PROT_EXEC, flag it as suspicious. Similarly, if mmap() sets MAP_ANONYMOUS with PROT_EXEC, log it. Use ptrace or seccomp to monitor the calls without introducing race conditions. If both mmap and mprotect are called within the same process session, increase the event score.
+
+
+
+6. Correlate Network Activity with File Modification
+function track_network_and_file_activity() to hash_monitor.c that maintains a PID-based map to track socket creation and file modification events. If socket() is called and a file modification event occurs within the same 10-second window for the same PID, flag it as suspicious. Use a ring buffer for tracking socket creation times to minimize memory overhead. If a process creates more than 3 sockets while modifying files within 30 seconds, increase the score. Ensure that network socket creation events are tracked using netlink to avoid kernel-level overhead.
+
+
+7. Unified Scoring System
+function calculate_score() to activity_scorer.c that computes a cumulative score for each event based on predefined scoring rules. Assign the following weights: High entropy (+10), suspicious parent-child relationship (+5), high-frequency modification (+5), RWX permission change (+20), and correlated network activity (+15). If the score exceeds 20, log the event and trigger a response. Ensure that scoring adjustments are handled dynamically based on system load — increase the threshold if the average load exceeds 2.0 to avoid false positives during high activity periods.
+
+8. Only Log High-Score Events
+file_monitor.c to call calculate_score() for each event. If the score exceeds 20, log the event. If the score is below the threshold, suppress the output. Implement dynamic threshold adjustment — increase the threshold if the average load exceeds 2.0 to prevent excessive logging. If the threshold is increased, log a system-level event for transparency.
+
+
+
+
